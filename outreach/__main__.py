@@ -101,6 +101,23 @@ def do_write(r, c):
     r["subject"], r["message"] = m["subject"], m["body"]
 
 
+def _site(host):
+    host = host.lower().removeprefix("www.")
+    parts = host.split(".")
+    # example.co.jp / example.jp / shop.example.com → 末尾の登録ドメイン部分で比較
+    return ".".join(parts[-3:]) if len(parts) >= 3 and parts[-2] in ("co", "or", "ne", "ac", "go", "lg", "ed", "gr", "ad", "com", "net", "org") else ".".join(parts[-2:])
+
+
+def pick_email(r):
+    """サイトと同じドメインのメールだけを宛先候補にする。"""
+    from urllib.parse import urlparse
+    site = _site(urlparse(r["url"]).netloc)
+    for e in (x.strip() for x in r["email"].split(",")):
+        if "@" in e and _site(e.rsplit("@", 1)[1]) == site:
+            return e
+    return ""
+
+
 def nonnegative_int(value):
     try:
         result = int(value)
@@ -198,8 +215,12 @@ def main():
         from . import mail
 
         def do_draft(r):
+            to = pick_email(r)
+            if not to:  # サイト制作会社のクレジット等、相手以外の可能性があるアドレスには自動で作らない
+                r["_next"], r["note"] = "mail_check", f"サイトと別ドメインのアドレスのみ（{r['email']}）。相手のものか確認して email 列を直す"
+                return
             try:
-                mail.save_draft(r["email"].split(",")[0].strip(), r["subject"], r["message"])
+                mail.save_draft(to, r["subject"], r["message"])
             except mail.DraftUncertain as exc:
                 r["_next"], r["note"] = "draft_uncertain", str(exc)
                 return

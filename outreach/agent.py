@@ -76,8 +76,8 @@ async def fill_form(url, cfg, msg, wait_human=True, headless=False):
             return "skipped", 0, "営業お断り表記"
         status = "filled" if res.filled else "error"
         if res.filled and wait_human and not headless:
-            ans = await asyncio.to_thread(input, f"  [AI入力 {len(res.filled_fields)}項目] 確認→送信したら Enter / スキップは s : ")
-            status = "skipped" if ans.strip().lower() == "s" else "sent"
+            from .filler import ask_human
+            status = await ask_human(len(res.filled_fields))
         elif res.filled and res.submitted and res.submission_evidence and not res.has_captcha and cfg.get("auto_submit") and not wait_human:
             status = "sent"
         note = ("CAPTCHAあり " if res.has_captcha else "") + res.note

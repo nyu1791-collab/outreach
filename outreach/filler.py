@@ -16,9 +16,13 @@ DELIVERY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 姓/名・セイ/メイに分かれた欄（日本のフォームに多い）。ラベルが「姓」「名」単独のものだけ当てる
+_ALONE = r"(?:^|\s){}(?:\s|$|[（(：:*※])"
 FIELD_RULES = [  # (キー, 判定パターン)  上から順に照合
     ("email_confirm", r"(確認|再入力|confirm).*(mail|メール)|(mail|メール).*(確認|再入力|confirm)"),
     ("email", r"mail|メール"),
+    ("kana_last", r"セイ|せい|kana.?(last|sei|family)|(last|sei|family).?kana|(?:フリガナ|ふりがな)\s*[（(]?\s*姓"),
+    ("kana_first", r"メイ|めい|kana.?(first|mei|given)|(first|mei|given).?kana|(?:フリガナ|ふりがな)\s*[（(]?\s*名(?!前)"),
     ("kana", r"kana|フリガナ|ふりがな|カナ"),
     ("company", r"company|会社|法人|御社|貴社|組織|団体|屋号|corp"),
     ("tel", r"tel|phone|電話|携帯"),
@@ -26,14 +30,27 @@ FIELD_RULES = [  # (キー, 判定パターン)  上から順に照合
     ("address", r"address|住所|所在地"),
     ("subject", r"subject|title|件名|タイトル|用件"),
     ("url", r"url|website|ホームページ|サイト"),
+    ("last_name", r"last.?name|family.?name|lname|(?:^|[\s_\-\[])sei(?:$|[\s_\-\]\d])|" + _ALONE.format("姓")),
+    ("first_name", r"first.?name|given.?name|fname|(?:^|[\s_\-\[])mei(?:$|[\s_\-\]\d])|" + _ALONE.format("名")),
     ("name", r"name|名前|氏名|担当者"),
 ]
+PREFS = ("北海道 青森県 岩手県 宮城県 秋田県 山形県 福島県 茨城県 栃木県 群馬県 埼玉県 千葉県 東京都 神奈川県 新潟県 富山県 石川県 "
+         "福井県 山梨県 長野県 岐阜県 静岡県 愛知県 三重県 滋賀県 京都府 大阪府 兵庫県 奈良県 和歌山県 鳥取県 島根県 岡山県 広島県 "
+         "山口県 徳島県 香川県 愛媛県 高知県 福岡県 佐賀県 長崎県 熊本県 大分県 宮崎県 鹿児島県 沖縄県").split()
+
+
+def _split(full):
+    parts = re.split(r"[\s\u3000]+", (full or "").strip(), maxsplit=1)
+    return (parts[0], parts[1]) if len(parts) == 2 else (full or "", "")
 SHOTS = Path(os.getenv("DATA_DIR", "data")) / "shots"
 
 
 def _values(cfg, msg):
     s = cfg["sender"]
-    return {"email": s.get("email", ""), "email_confirm": s.get("email", ""), "kana": s.get("kana", ""),
+    last, first = _split(s["name"])
+    kana_last, kana_first = _split(s.get("kana", ""))
+    return {"last_name": last, "first_name": first, "kana_last": kana_last, "kana_first": kana_first,
+            "email": s.get("email", ""), "email_confirm": s.get("email", ""), "kana": s.get("kana", ""),
             "company": s.get("company", "") or s["name"], "tel": s.get("tel", ""), "zip": s.get("zip", ""),
             "address": s.get("address", ""), "subject": msg["subject"], "url": s.get("url", ""), "name": s["name"],
             "message": msg["body"]}
@@ -43,9 +60,26 @@ async def _describe(el):
     return await el.evaluate("""e => {
         const lab = (e.id && document.querySelector(`label[for="${e.id}"]`)) || e.closest('label');
         const row = e.closest('tr,dl,li,.form-group,.row,p,div');
-        const th = row ? (row.querySelector('th,dt,label')||{}).innerText : '';
+        // 同じ行に「姓」「名」が並ぶ表では、行の先頭ではなく入力欄の直前の見出しセルを使う
+        const cell = e.closest('td,dd');
+        const prev = cell && cell.previousElementSibling;
+        const th = (prev && /^(TH|DT|LABEL)$/.test(prev.tagName)) ? prev.innerText
+                 : (row ? (row.querySelector('th,dt,label')||{}).innerText : '');
         return [e.name, e.id, e.placeholder, e.getAttribute('aria-label'), lab?lab.innerText:'', th||''].join(' ');
     }""")
+
+
+async def ask_human(filled):
+    """人間の最終確認。Enter だけでは「送信済み」にしない（押し間違いで送ったことにならないように）。"""
+    while True:
+        ans = (await asyncio.to_thread(
+            input, f"  [{filled}項目入力] ブラウザで確認してください。 y=送信した / s=送らない / Enter=入力だけ（未送信） : ")).strip().lower()
+        if ans in ("y", "yes", "送信"):
+            return "sent"
+        if ans in ("s", "skip"):
+            return "skipped"
+        if ans == "":
+            return "filled"
 
 
 async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True):
@@ -75,8 +109,14 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
                 if typ == "checkbox" and re.search(r"同意|agree|privacy|個人情報|プライバシー", desc):
                     await el.check(); continue
                 if tag == "select":
-                    opts = await el.evaluate("e => [...e.options].map(o => o.value).filter(Boolean)")
-                    pick = next((o for o in opts if re.search(r"その他|other|提案|営業|相談", o, re.I)), opts[-1] if opts else None)
+                    # 当てはまる選択肢が無ければ選ばない（末尾を選ぶと都道府県=沖縄県 等の誤入力になる）
+                    opts = await el.evaluate("e => [...e.options].filter(o => o.value).map(o => [o.value, o.text])")
+                    texts = " ".join(t for _, t in opts)
+                    if sum(p in texts for p in PREFS) >= 10:  # 都道府県
+                        pref = next((p for p in PREFS if p in (cfg["sender"].get("address") or "")), None)
+                        pick = next((v for v, t in opts if pref and pref in t), None)
+                    else:
+                        pick = next((v for v, t in opts if re.search(r"その他|other|提案|営業|相談|業務提携", t, re.I)), None)
                     if pick:
                         await el.select_option(pick)
                     continue
@@ -97,8 +137,7 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
             await browser.close()
             return "retry_agent", filled
         if wait_human and not headless:
-            ans = await asyncio.to_thread(input, f"  [{filled}項目入力] ブラウザで確認→送信したら Enter / スキップは s : ")
-            result = "skipped" if ans.strip().lower() == "s" else "sent"
+            result = await ask_human(filled)
         elif cfg.get("auto_submit"):
             btn = await page.query_selector("button[type=submit], input[type=submit], button:has-text('送信'), button:has-text('確認')")
             if btn:

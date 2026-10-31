@@ -15,8 +15,10 @@ def write(lead: dict, cfg: dict) -> dict:
         target_url=lead["url"], hook=lead.get("hook", ""), target_text=lead.get("summary", "")[:5000], max_chars=cfg.get("max_chars", 500),
     )
     res = llm.ask(prompt, json_mode=True)
-    if res:
-        return {"subject": res.get("subject", ""), "body": res.get("body", "") + footer(cfg)}
+    # 本文が無い/短すぎる応答で署名だけを送らないよう、形式を確認してから使う
+    if isinstance(res, dict) and isinstance(res.get("body"), str) and len(res["body"].strip()) >= 50:
+        subject = res.get("subject") if isinstance(res.get("subject"), str) and res["subject"].strip() else offer.get("subject", "ご提案のご連絡")
+        return {"subject": subject.strip(), "body": res["body"].strip() + "\n" + footer(cfg)}
     body = (
         f"{lead['name']} ご担当者様\n\n突然のご連絡失礼いたします。{s.get('company','')}の{s['name']}と申します。\n"
         f"貴社サイトを拝見し、{offer.get('short') or offer['summary']}でお力になれると考えご連絡しました。\n{offer.get('cta','')}\n"
