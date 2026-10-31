@@ -4,7 +4,7 @@
 
 事業3の営業支援です。候補検索 → 企業サイト解析 → 個別提案文 → フォーム入力 → 人間の最終確認、メールだけの相手にはGmail下書きを作ります。`office-worker` の受託ツールを売るために使えますが、受注から案件フォルダを自動作成する連携は未実装です。
 
-[3リポジトリの構成・合併判断](https://github.com/nyu1791-collab/office-worker/blob/ccr-aac984d0-n27k7c/docs/BUSINESS_ARCHITECTURE.md)に従い、リポジトリ名は継続。動画制作・動画編集は対象外です。
+[3リポジトリの構成・合併判断](https://github.com/nyu1791-collab/office-worker/blob/bde57750200924a357414216a13248c7a1720894/docs/BUSINESS_ARCHITECTURE.md)に従い、リポジトリ名は継続。動画制作・動画編集は対象外です。
 
 ## 今回の修正
 
