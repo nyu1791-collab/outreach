@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 
-from .scrape import NO_SALES_RE
+from .scrape import has_no_sales_notice
 
 DELIVERY_RE = re.compile(
     r"送信(?:が)?完了(?:しました|いたしました)|送信されました|送信完了(?=[\s。.!！]|$)"
@@ -58,7 +58,7 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         await page.wait_for_timeout(1500)
         before_text = await page.inner_text("body")
-        if NO_SALES_RE.search(before_text):
+        if has_no_sales_notice(before_text):
             await page.screenshot(path=str(SHOTS / f"{lead_id}.png"), full_page=True)
             await browser.close()
             return "no_sales", 0

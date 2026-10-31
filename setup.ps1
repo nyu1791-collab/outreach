@@ -1,4 +1,4 @@
-# Windows: .\setup.ps1（追加機能は下のスイッチで導入）
+﻿# Windows: .\setup.ps1（追加機能は下のスイッチで導入）
 param([switch]$WithBrowser, [switch]$WithFirecrawl)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot

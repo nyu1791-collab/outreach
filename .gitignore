@@ -5,6 +5,7 @@ service_account.json
 data/*.csv
 !data/seed_leads.csv
 data/shots/
+data/.*.tmp
 dist/
 build/
 *.spec

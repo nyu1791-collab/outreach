@@ -27,7 +27,7 @@ load_dotenv()
 from . import scrape, writer  # noqa: E402
 from .store import Table  # noqa: E402
 
-COLS = ["id", "name", "url", "contact_url", "email", "socials", "hook", "summary", "subject", "message", "status", "note", "updated_at"]
+COLS = ["id", "name", "url", "contact_url", "email", "socials", "hook", "summary", "subject", "message", "status", "note", "updated_at", "form_attempted_at"]
 
 
 def cfg():
@@ -57,12 +57,20 @@ def add_rows(new):
     print(f"+{n}件 追加（合計 {len(rows)}）")
 
 
-def step(status_from, status_to, fn, limit, on_error_status="error"):
+def step(status_from, status_to, fn, limit, on_error_status="error", in_progress_status=None, attempt_field=None):
+    if limit < 0:
+        raise ValueError("limitは0以上で指定してください")
     t = Table("leads", COLS)
     rows = t.load()
     todo = [r for r in rows if r["status"] == status_from][:limit]
     for i, r in enumerate(todo, 1):
         print(f"[{i}/{len(todo)}] {r['name'][:30]}  {r['url']}")
+        start_status = in_progress_status(r) if callable(in_progress_status) else in_progress_status
+        if start_status:
+            r["status"], r["updated_at"] = start_status, now()
+            if attempt_field:
+                r[attempt_field] = now()
+            t.save(rows)  # 副作用の前に保存。中断後の無条件な重複実行を防ぐ。
         try:
             fn(r)
             r["status"] = r.get("_next", status_to)
@@ -93,19 +101,31 @@ def do_write(r, c):
     r["subject"], r["message"] = m["subject"], m["body"]
 
 
+def nonnegative_int(value):
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("0以上の整数で指定してください")
+    if result < 0:
+        raise argparse.ArgumentTypeError("0以上の整数で指定してください")
+    return result
+
+
 def main():
     ap = argparse.ArgumentParser(prog="outreach", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    d = sp.add_parser("discover"); d.add_argument("query"); d.add_argument("-n", type=int, default=20)
+    d = sp.add_parser("discover"); d.add_argument("query"); d.add_argument("-n", type=nonnegative_int, default=20)
     a = sp.add_parser("add"); a.add_argument("url"); a.add_argument("--name", default="")
     im = sp.add_parser("import"); im.add_argument("csv")
     for name in ("scrape", "research", "write", "fill", "drafts", "run"):
-        p = sp.add_parser(name); p.add_argument("--limit", type=int, default=50)
+        p = sp.add_parser(name); p.add_argument("--limit", type=nonnegative_int, default=50)
         if name in ("fill", "run"):
             p.add_argument("--agent", action="store_true", help="browser-use AIエージェントで入力")
             p.add_argument("--headless", action="store_true", help="画面なし（スクショのみ・送信しない）")
     sp.add_parser("status")
     args = ap.parse_args()
+    if getattr(args, "limit", None) == 0 or (args.cmd == "discover" and args.n == 0):
+        return
     c = cfg()
 
     if args.cmd == "discover":
@@ -166,19 +186,26 @@ def main():
             time.sleep(c.get("interval_sec", 5))
         today = datetime.now().strftime("%Y-%m-%d")
         done_today = sum(1 for r in Table("leads", COLS).load()
-                         if r["status"] in ("filled", "sent") and r["updated_at"].startswith(today))
+                         if r.get("form_attempted_at", "").startswith(today) or
+                         (not r.get("form_attempted_at") and r["status"] in ("filled", "sent") and r["updated_at"].startswith(today)))
         left = max(0, c.get("daily_limit", 30) - done_today)
         if left == 0:
             print(f"本日の上限 {c.get('daily_limit', 30)} 件に達しています（config.yaml の daily_limit）")
-        step("written", "filled", do_fill, min(args.limit, left))
+        step("written", "filled", do_fill, min(args.limit, left), on_error_status="fill_uncertain",
+             in_progress_status=lambda r: "filling" if r["contact_url"] else None,
+             attempt_field="form_attempted_at")
     if args.cmd == "drafts":
         from . import mail
 
         def do_draft(r):
-            mail.save_draft(r["email"].split(",")[0].strip(), r["subject"], r["message"])
+            try:
+                mail.save_draft(r["email"].split(",")[0].strip(), r["subject"], r["message"])
+            except mail.DraftUncertain as exc:
+                r["_next"], r["note"] = "draft_uncertain", str(exc)
+                return
             r["_next"] = "drafted"
             r["note"] = ""
-        step("mail_only", "drafted", do_draft, args.limit, on_error_status="mail_only")
+        step("mail_only", "drafted", do_draft, args.limit, on_error_status="mail_only", in_progress_status="drafting")
     if args.cmd == "status":
         print(dict(Counter(r["status"] for r in Table("leads", COLS).load())))
 

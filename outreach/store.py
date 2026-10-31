@@ -2,6 +2,7 @@
 全件読み→編集→全件保存のシンプル設計（数千行までなら十分速い）。"""
 import csv
 import os
+import tempfile
 from pathlib import Path
 
 DATA = Path(os.getenv("DATA_DIR", "data"))
@@ -36,11 +37,26 @@ class Table:
     def save(self, rows: list[dict]):
         data = [[r.get(c, "") for c in self.columns] for r in rows]
         if self.ws:
-            self.ws.clear()
-            self.ws.update([self.columns] + data, "A1")
+            # 更新前にclearすると通信失敗時に全履歴が消える。末尾を含む1回の更新で置換する。
+            existing = self.ws.get_all_values()
+            width = max([len(self.columns), *(len(row) for row in existing)])
+            grid = [self.columns] + data
+            grid = [row + [""] * (width - len(row)) for row in grid]
+            grid += [[""] * width for _ in range(max(0, len(existing) - len(grid)))]
+            self.ws.update(grid, "A1")
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "w", encoding="utf-8-sig", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(self.columns)
-            w.writerows(data)
+        pending = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", dir=self.path.parent, prefix=f".{self.name}-", suffix=".tmp",
+                                             encoding="utf-8-sig", newline="", delete=False) as f:
+                pending = Path(f.name)
+                w = csv.writer(f)
+                w.writerow(self.columns)
+                w.writerows(data)
+                f.flush()
+                os.fsync(f.fileno())
+            pending.replace(self.path)
+        finally:
+            if pending is not None:
+                pending.unlink(missing_ok=True)

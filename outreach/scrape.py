@@ -13,7 +13,19 @@ CONTACT_HINTS = ("contact", "inquiry", "toiawase", "otoiawase", "form", "お問�
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 SOCIAL = ("twitter.com", "x.com", "instagram.com", "youtube.com", "tiktok.com", "facebook.com", "line.me", "note.com")
 FORM_HOSTS = ("form.run", "docs.google.com", "forms.gle", "share.hsforms.com", "ssl.form-mailer.jp", "tayori.com", "formzu.net")
-NO_SALES_RE = re.compile(r"営業(目的)?の?(ご連絡|お問い合わせ|メール)?(は|を)?(ご遠慮|お断り|禁止)|セールス.{0,6}(お断り|ご遠慮)")
+NO_SALES_RE = re.compile(
+    r"(?:営業|セールス|勧誘)(?:[・/／、,と]*(?:営業|セールス|勧誘))*"
+    r"(?:目的)?(?:での|による|に関する|の)?"
+    r"(?:(?:お問い合わせ|お問合せ|お問合わせ|問い合わせ|問合せ|ご連絡|連絡|メール|電話|ご提案|提案)"
+    r"(?:等|など)?(?:は|を|について)?)?"
+    r"(?:は|を)?(?:固く|一切|原則)?"
+    r"(?:ご遠慮|お断り|禁止|受け付けておりません|受け付けません|お受けできません)"
+)
+
+
+def has_no_sales_notice(text):
+    """改行や全角空白を除いて共通の営業禁止表記を検査する。"""
+    return bool(NO_SALES_RE.search(re.sub(r"\s+", "", text or "")))
 
 EXTRACT_PROMPT = """以下は企業/個人のWebサイト本文です。営業アプローチ用に情報を抽出し JSON で返してください。
 キー:
@@ -94,7 +106,7 @@ def analyze(url: str) -> dict:
     except Exception as e:
         print(f"  抽出LLM失敗: {e}")
     info = info or {"company": title, "summary": text[:200].replace("\n", " "), "hook": "", "pain": "", "recent": ""}
-    info["no_sales"] = bool(info.get("no_sales")) or bool(NO_SALES_RE.search(text))
+    info["no_sales"] = bool(info.get("no_sales")) or has_no_sales_notice(text)
     return {
         "title": info.get("company") or title,
         "contact_url": contact,

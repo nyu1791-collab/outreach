@@ -15,6 +15,15 @@
 - AIブラウザとFirecrawlの依存は任意導入。基本のフォーム入力はPlaywright。
 - 外部通信なしの回帰テストとテスト用Actionsを追加。
 
+## 追加の見直しで修正した点
+
+- `--limit` / `-n` の負数を拒否。`0` は設定読み込みや外部処理を行わず終了。
+- CSVは一時ファイルへ書き込み、書き込み成功後に置換。途中失敗で既存の履歴を消さない。
+- Sheetsは先に全件削除せず、不要な末尾行を空欄にした1回の更新で置換。
+- フォームとGmail下書きは、副作用の前に `filling` / `drafting` を保存。中断後は自動で再実行しない。
+- Gmailの明確な保存拒否は再試行できるが、APPENDの応答不明は `draft_uncertain` として保留。
+- フォーム試行日時を記録し、スキップ・失敗も日次枠に含める。改行や「営業目的での」「営業・勧誘目的」等の禁止表記にも対応。
+
 ## 再開コマンド
 
 ```powershell
@@ -28,13 +37,17 @@
 
 `status` と回帰テストは営業送信を行いません。Linuxは `bash setup.sh`、追加機能は `--with-browser` / `--with-firecrawl` です。
 
-通常テストでは実ブラウザのテストを省略します。ChromiumのDOM検証も行う場合は `OUTREACH_BROWSER_TESTS=1` を指定し、必要なら `CHROME_PATH` で実行ファイルを選びます。今回、ローカルChromiumでメモリ内HTMLを使った4件を含む12件を確認しました。実際の企業サイトや送信先へ接続するテストではありません。
+通常テストでは実ブラウザのテストを省略します。ChromiumのDOM検証も行う場合は `OUTREACH_BROWSER_TESTS=1` を指定し、必要なら `CHROME_PATH` で実行ファイルを選びます。ローカルChromiumでメモリ内HTMLを使った5件を含む28件が成功しました。実際の企業サイトや送信先へ接続するテストではありません。
 
-Python 3.12の専用venvに基本依存を導入し、`pip check` と `status` も確認しました。通常のテストCIはブラウザ4件を省略し、8件を実行します。
+Python 3.12の専用venvに基本依存を導入し、`pip check` と `status` も確認しました。ブラウザ未導入での通常実行はDOM検証5件を省略し、23件を実行します。
 
 ## 状態と運用
 
 通常の状態は `new → scraped → written → filled → sent`。`no_sales`、`no_contact`、`mail_only`、`drafted`、`skipped`、`error` もあります。CSVは `data/leads.csv`、Sheets設定時はシートを使います。
+
+外部処理の前には `filling` / `drafting` を保存します。この状態が次回まで残っている場合、または `fill_uncertain` / `draft_uncertain` の場合は、送信・保存が完了したか不明なので自動再実行しません。対象サイトやGmailの実際の状態と照合してください。未処理と確認できた場合だけ、データをバックアップしたうえでフォームは `written`、メールは `mail_only` に戻します。処理済みなら `sent` / `drafted` に変更します。
+
+`form_attempted_at` はフォームへの入力を試みた日時です。入力後にスキップした場合や処理結果が不明な場合も日次枠を消費します。旧形式でこの列がない履歴は、従来の `filled/sent` と更新日で数えます。CSV/Sheetsを同時に複数のプロセスから書き換えないでください。
 
 既定 `auto_submit: false`。画面ありの入力でEnterを押す操作は「自分で送信した」という人間の申告です。`filled` は未送信または結果未確定であり、`sent` と区別してください。自動判定は完了文言を使うため、全フォームでの確定を保証するものではありません。
 
@@ -42,7 +55,7 @@ Python 3.12の専用venvに基本依存を導入し、`pip check` と `status` �
 
 ## 未確認・次の作業
 
-WindowsのPowerShellセットアップは今回未検証です。
+Windows PowerShell 5.1での基本セットアップと回帰テストをCIへ追加しています。`windows-setup` はChromium DOM検証も含めて実行します。実行結果はPRで確認できます。`setup.ps1` は日本語を正しく読むためUTF-8 BOM付きで保存します。
 
 Gemini、実browser-use SDK、Firecrawl、Sheets、Gmail本接続、実サイトのフォーム操作は今回未検証です。入力欄の値はプレースホルダ化しますが、署名を含む営業文もAIブラウザへ渡るため、個人情報が一切AIに渡らない設計ではありません。
 

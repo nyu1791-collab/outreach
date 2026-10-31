@@ -39,6 +39,9 @@ class FormBrowserTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_sales_on_contact_page_stops_before_input(self):
         self.assertEqual(await self.run_fixture(notice="営業目的のお問い合わせはお断りします"), ("no_sales", 0))
 
+    async def test_multiline_sales_notice_stops_before_input(self):
+        self.assertEqual(await self.run_fixture(notice="営業・勧誘目的での<br>お問い合わせは<br>ご遠慮ください"), ("no_sales", 0))
+
     async def test_confirmation_page_is_not_sent(self):
         self.assertEqual(await self.run_fixture(completion="入力内容をご確認ください"), ("filled", 2))
 
