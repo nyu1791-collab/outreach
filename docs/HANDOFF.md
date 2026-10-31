@@ -37,9 +37,9 @@
 
 `status` と回帰テストは営業送信を行いません。Linuxは `bash setup.sh`、追加機能は `--with-browser` / `--with-firecrawl` です。
 
-通常テストでは実ブラウザのテストを省略します。ChromiumのDOM検証も行う場合は `OUTREACH_BROWSER_TESTS=1` を指定し、必要なら `CHROME_PATH` で実行ファイルを選びます。ローカルChromiumでメモリ内HTMLを使った5件を含む28件が成功しました。実際の企業サイトや送信先へ接続するテストではありません。
+通常テストでは実ブラウザのテストを省略します。ChromiumのDOM検証も行う場合は `OUTREACH_BROWSER_TESTS=1` を指定し、必要なら `CHROME_PATH` で実行ファイルを選びます。ローカルChromiumでメモリ内HTMLを使った5件を含む29件が成功しました。実際の企業サイトや送信先へ接続するテストではありません。
 
-Python 3.12の専用venvに基本依存を導入し、`pip check` と `status` も確認しました。ブラウザ未導入での通常実行はDOM検証5件を省略し、23件を実行します。
+Python 3.12の専用venvに基本依存を導入し、`pip check` と `status` も確認しました。ブラウザ未導入での通常実行はDOM検証5件を省略し、24件を実行します。
 
 ## 状態と運用
 
@@ -56,6 +56,8 @@ Python 3.12の専用venvに基本依存を導入し、`pip check` と `status` �
 ## 未確認・次の作業
 
 Windows PowerShell 5.1での基本セットアップと回帰テストをCIへ追加しています。`windows-setup` はChromium DOM検証も含めて実行します。実行結果はPRで確認できます。`setup.ps1` は日本語を正しく読むためUTF-8 BOM付きで保存します。
+
+出力先が日本語を扱えない場合は、その文字だけをエスケープして処理を続けます。日本語のログをそのまま保存したい場合は、起動前に `PYTHONIOENCODING=utf-8` を設定します。コンソールの既存の文字コードは自動変更しません。
 
 Gemini、実browser-use SDK、Firecrawl、Sheets、Gmail本接続、実サイトのフォーム操作は今回未検証です。入力欄の値はプレースホルダ化しますが、署名を含む営業文もAIブラウザへ渡るため、個人情報が一切AIに渡らない設計ではありません。
 
