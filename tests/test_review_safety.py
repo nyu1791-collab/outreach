@@ -78,6 +78,15 @@ class ReviewSafetyTests(unittest.TestCase):
         sheet.clear.assert_not_called()
         sheet.update.assert_called_once_with([["id", "status", ""], ["new", "written", ""], ["", "", ""]], "A1")
 
+    def test_sheets_grows_before_update_beyond_default_grid(self):
+        sheet = MagicMock(row_count=3, col_count=2)
+        sheet.get_all_values.return_value = [["id", "status"]]
+        table = store.Table("sheet", ["id", "status"])
+        table.ws = sheet
+        table.save([{"id": str(i), "status": "new"} for i in range(5)])
+        sheet.resize.assert_called_once_with(rows=6, cols=2)
+        self.assertEqual(len(sheet.update.call_args[0][0]), 6)
+
     def test_sheets_update_failure_does_not_clear_previous_rows(self):
         sheet = MagicMock()
         sheet.get_all_values.return_value = [["id"], ["existing"]]

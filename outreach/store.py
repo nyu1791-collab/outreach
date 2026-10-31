@@ -43,6 +43,10 @@ class Table:
             grid = [self.columns] + data
             grid = [row + [""] * (width - len(row)) for row in grid]
             grid += [[""] * width for _ in range(max(0, len(existing) - len(grid)))]
+            rows_now, cols_now = getattr(self.ws, "row_count", None), getattr(self.ws, "col_count", None)
+            if isinstance(rows_now, int) and isinstance(cols_now, int) and (len(grid) > rows_now or width > cols_now):
+                # シートの既定は1000行。超える更新は範囲外エラーになるので先に広げる
+                self.ws.resize(rows=max(len(grid), rows_now), cols=max(width, cols_now))
             self.ws.update(grid, "A1")
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
