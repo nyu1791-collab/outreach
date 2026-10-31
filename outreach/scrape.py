@@ -133,7 +133,7 @@ def analyze(url: str, extract_hint: str = "", web: bool = False) -> dict:
         print(f"  抽出LLM失敗: {e}")
     info = info or {"company": title, "summary": text[:200].replace("\n", " "), "hook": "", "pain": "", "recent": ""}
     info["no_sales"] = bool(info.get("no_sales")) or has_no_sales_notice(text)
-    facts, sources = web_research(info.get("company") or title or url, url) if web else ([], [])
+    facts, sources = web_research(info.get("company") or title or url, url) if web and not info["no_sales"] else ([], [])  # 営業お断りの相手は調べない
     if facts:
         info["recent"] = " / ".join(facts)
     return {
