@@ -62,3 +62,7 @@ Windows PowerShell 5.1での基本セットアップと回帰テストをCIへ�
 Gemini、実browser-use SDK、Firecrawl、Sheets、Gmail本接続、実サイトのフォーム操作は今回未検証です。入力欄の値はプレースホルダ化しますが、署名を含む営業文もAIブラウザへ渡るため、個人情報が一切AIに渡らない設計ではありません。
 
 まず売上CSV→Excel集計という1商品にofferを揃え、少数の候補について根拠のある文面と送信先を確認します。価格・納期・収益は実測で決める段階です。
+
+## 2026-10-31 追記
+- `config.yaml` の `offer` を商品「売上CSV集計」（office-worker/products/sales-csv-to-excel）に合わせた。`short`（AIキー無しのテンプレ用）と `target_hint`（1店舗の相手には売り込まない）を追加
+- Googleシート保存で行数が既定の1000行を超えると範囲外エラーになっていた → 更新前にシートを拡張（回帰テスト追加）
