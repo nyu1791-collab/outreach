@@ -5,7 +5,6 @@
   - examples/custom-functions/*.py          → Tools に独自アクション（Web検索）を追加
   - examples/use-cases/find_influencer_profiles.py → SNS/連絡先リサーチ用の Profiles スキーマ
 """
-import asyncio
 import json
 import os
 from urllib.parse import urlparse
