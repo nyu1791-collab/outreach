@@ -113,8 +113,17 @@ def main():
     elif args.cmd == "add":
         add_rows([{"url": args.url, "name": args.name}])
     elif args.cmd == "import":
-        with open(args.csv, encoding="utf-8-sig") as f:
-            add_rows(list(csv.DictReader(f)))
+        for enc in ("utf-8-sig", "cp932"):  # Excel保存の Shift_JIS も読める
+            try:
+                with open(args.csv, encoding=enc) as f:
+                    rows = list(csv.DictReader(f))
+                break
+            except UnicodeDecodeError:
+                continue
+        # 列名ゆれ吸収（URL/url/ホームページ, 会社名/name 等）
+        norm = lambda r: {"url": next((v for k, v in r.items() if k and k.strip().lower() in ("url", "ホームページ", "website", "サイト")), ""),
+                          "name": next((v for k, v in r.items() if k and k.strip().lower() in ("name", "会社名", "企業名", "店舗名", "名前")), "")}
+        add_rows([norm(r) for r in rows])
     if args.cmd in ("scrape", "run"):
         step("new", "scraped", do_scrape, args.limit)
     if args.cmd == "research":
@@ -152,7 +161,13 @@ def main():
                                                            headless=args.headless))
             r["_next"], r["note"] = res, f"入力{n}項目 {note}".strip()
             time.sleep(c.get("interval_sec", 5))
-        step("written", "filled", do_fill, min(args.limit, c.get("daily_limit", 30)))
+        today = datetime.now().strftime("%Y-%m-%d")
+        done_today = sum(1 for r in Table("leads", COLS).load()
+                         if r["status"] in ("filled", "sent") and r["updated_at"].startswith(today))
+        left = max(0, c.get("daily_limit", 30) - done_today)
+        if left == 0:
+            print(f"本日の上限 {c.get('daily_limit', 30)} 件に達しています（config.yaml の daily_limit）")
+        step("written", "filled", do_fill, min(args.limit, left))
     if args.cmd == "drafts":
         from . import mail
 

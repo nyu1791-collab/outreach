@@ -57,7 +57,10 @@ async def fill_form(url, cfg, msg, wait_human=True, headless=False):
 - ページに「営業目的のお問い合わせはご遠慮ください」等の表記があれば入力せず no_sales_notice=true で終了
 - CAPTCHA があれば has_captcha=true として終了
 - {submit_rule}"""
-    browser = Browser(headless=headless, keep_alive=True, allowed_domains=[domain, f"*.{domain}"])
+    from .scrape import FORM_HOSTS
+    base = domain.removeprefix("www.")
+    allowed = [domain, base, f"*.{base}", *FORM_HOSTS, "*.hsforms.com", "*.hubspot.com", "*.formrun.jp"]
+    browser = Browser(headless=headless, keep_alive=True, allowed_domains=allowed)
     agent = Agent(task=task, llm=make_llm(), browser=browser, output_model_schema=FormResult,
                   sensitive_data={domain: secrets}, tools=Tools(exclude_actions=["search"]), use_vision=True)
     try:

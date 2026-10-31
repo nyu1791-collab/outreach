@@ -12,6 +12,7 @@ UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 CONTACT_HINTS = ("contact", "inquiry", "toiawase", "otoiawase", "form", "お問い合わせ", "お問合せ", "問い合わせ", "ご相談")
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 SOCIAL = ("twitter.com", "x.com", "instagram.com", "youtube.com", "tiktok.com", "facebook.com", "line.me", "note.com")
+FORM_HOSTS = ("form.run", "docs.google.com", "forms.gle", "share.hsforms.com", "ssl.form-mailer.jp", "tayori.com", "formzu.net")
 NO_SALES_RE = re.compile(r"営業(目的)?の?(ご連絡|お問い合わせ|メール)?(は|を)?(ご遠慮|お断り|禁止)|セールス.{0,6}(お断り|ご遠慮)")
 
 EXTRACT_PROMPT = """以下は企業/個人のWebサイト本文です。営業アプローチ用に情報を抽出し JSON で返してください。
@@ -46,12 +47,17 @@ def _local(url):
     return text, links, title, labels, has_form, html
 
 
+def _base(netloc):
+    return netloc.lower().removeprefix("www.")
+
+
 def _contact(url, links, labels):
     for l in links:
         low = (l + " " + labels.get(l, "")).lower()
         if l.startswith("mailto:"):
             continue
-        if any(h in low for h in CONTACT_HINTS) and urlparse(l).netloc == urlparse(url).netloc:
+        host, site = _base(urlparse(l).netloc), _base(urlparse(url).netloc)
+        if any(h in low for h in CONTACT_HINTS) and (host == site or host.endswith("." + site) or host in FORM_HOSTS):
             return l
     return ""
 
