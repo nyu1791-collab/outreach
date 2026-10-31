@@ -87,3 +87,11 @@ python -m outreach status                                         # キャンペ
 - 配信停止返信の自動取り込みは未実装です。不要と返答された相手は手動で `skipped` にして再連絡しないよう管理します。
 - メール送信は特定電子メール法の表示義務あり（署名と配信停止文は `config.yaml` で自動付与）
 - 既定の `daily_limit: 30` / `interval_sec: 5` を目安に
+
+## Gemini の接続（情報収集・執筆・読み取り・翻訳）
+1. キー発行: https://aistudio.google.com/apikey
+2. PC（3リポジトリ共通で1回だけ）: PowerShell で `setx GEMINI_API_KEY "キー"` → PowerShell を開き直す（各 `.env` の `GEMINI_API_KEY=` は空のままでよい）
+3. 確認: `python -m outreach llm-check`（用途ごとの接続先と、検索の裏付けが取れるかを表示）
+4. 用途ごとの使い分けは `.env` の `GEMINI_MODEL_WRITE` 等（例: 記事だけ `gemini-2.5-pro`）。安全フィルタで止まる内容は `GEMINI_SAFETY=relaxed`、それでも止まる用途だけ `LLM_PROVIDER_<用途>=openrouter`
+
+- このリポジトリでの用途: サイト内容の整理（extract）、**相手の最近の動きを Google 検索で出典付き調査**（research、`config.yaml` の `web_research`）、営業文・DM（write）

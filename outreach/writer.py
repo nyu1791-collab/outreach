@@ -25,7 +25,7 @@ def write(lead: dict, cfg: dict) -> dict:
         price=offer.get("price", ""), cta=offer.get("cta", ""), target_hint=offer.get("target_hint", ""), target_name=lead["name"],
         target_url=lead["url"], hook=lead.get("hook", ""), target_text=lead.get("summary", "")[:5000], max_chars=cfg.get("max_chars", 500),
     )
-    res = llm.ask(prompt, json_mode=True)
+    res = llm.ask(prompt, json_mode=True, task="write")
     # 本文が無い/短すぎる応答で署名だけを送らないよう、形式を確認してから使う
     if isinstance(res, dict) and isinstance(res.get("body"), str) and len(res["body"].strip()) >= 50:
         subject = res.get("subject") if isinstance(res.get("subject"), str) and res["subject"].strip() else offer.get("subject", "ご提案のご連絡")

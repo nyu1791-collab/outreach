@@ -99,7 +99,8 @@ def cfg_for(r):
 
 
 def do_scrape(r):
-    a = scrape.analyze(r["url"], cfg_for(r).get("extract_hint", ""))
+    cc = cfg_for(r)
+    a = scrape.analyze(r["url"], cc.get("extract_hint", ""), web=cc.get("web_research", True))
     r["contact_url"], r["email"], r["socials"], r["summary"] = a["contact_url"], a["email"], a["socials"], a["text"]
     r["hook"] = a["hook"]
     if a["title"] and (r["name"] == r["url"] or len(r["name"]) > 40):
@@ -162,11 +163,15 @@ def main():
             p.add_argument("--agent", action="store_true", help="browser-use AIエージェントで入力")
             p.add_argument("--headless", action="store_true", help="画面なし（スクショのみ・送信しない）")
     sp.add_parser("status")
+    sp.add_parser("llm-check", help="Gemini 等の接続確認")
     for sub in sp.choices.values():
         sub.add_argument("--campaign", default=None, help="config.yaml の campaigns の名前")
     args = ap.parse_args()
     if getattr(args, "limit", None) == 0 or (args.cmd == "discover" and args.n == 0):
         return
+    if args.cmd == "llm-check":
+        from . import llm
+        return llm.check()
     global CAMPAIGN
     c = cfg()
     CFG.clear(); CFG.update(c)

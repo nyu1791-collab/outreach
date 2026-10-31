@@ -78,3 +78,9 @@ Gemini、実browser-use SDK、Firecrawl、Sheets、Gmail本接続、実サイト
 - channel=dm のキャンペーンは `write` 後に `dm_ready` → `export-dm` で CSV に書き出し、人が送って `mark <id> sent`。自動送信はしない
 - `extract_hint`（キャンペーン別の抽出指示）と `cookies`（DLsite の年齢確認等）
 - LLM は OpenRouter も可（`LLM_PROVIDER=openrouter`）
+
+## 2026-10-31 Gemini 接続の整理
+- `llm.py` は3リポジトリ共通。全呼び出しに用途 task（research/write/translate/ocr/extract/fast）を付け、用途ごとにモデル・接続先を `.env` で切替
+- `ask_sources(..., search=True)` で Google 検索の裏付け（出典URL）。出典の無い調査結果は採用しない
+- 安全フィルタで止まったら None＋用途別の切替方法を表示。`llm-check` コマンドで接続確認
+- Firecrawl のキーがあってもライブラリ未導入なら通常取得にフォールバック（以前は例外で全件失敗していた）

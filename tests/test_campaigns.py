@@ -65,3 +65,14 @@ class CampaignTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WebResearchTests(unittest.TestCase):
+    def test_facts_without_search_sources_are_discarded(self):
+        from outreach import llm
+        with patch.object(llm, "ask_sources", return_value=({"facts": ["推測の話"]}, [])):
+            self.assertEqual(scrape.web_research("A社", "https://a.example/"), ([], []))
+        with patch.object(llm, "ask_sources", return_value=({"facts": ["10月に新店舗"]}, [{"title": "t", "uri": "https://n.example/1"}])):
+            facts, src = scrape.web_research("A社", "https://a.example/")
+        self.assertEqual(facts, ["10月に新店舗"])
+        self.assertEqual(src[0]["uri"], "https://n.example/1")

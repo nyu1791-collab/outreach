@@ -13,7 +13,12 @@ def client():
     if not (url or key):
         _client = None
         return None
-    from firecrawl import Firecrawl
+    try:
+        from firecrawl import Firecrawl
+    except ImportError:  # キーはあるが未導入（GitHub Actions 等）→ 通常のページ取得で続ける
+        print("  Firecrawl のキーがありますがライブラリ未導入のため使いません（setup.ps1 -WithFirecrawl / pip install firecrawl-py）")
+        _client = None
+        return None
     _client = Firecrawl(api_key=key or "fc-local", api_url=url or "https://api.firecrawl.dev")
     return _client
 

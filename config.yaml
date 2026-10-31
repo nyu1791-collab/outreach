@@ -63,6 +63,7 @@ cookies:
   dlsite.com: {adultchecked: "1"}
 
 max_chars: 450
+web_research: true     # scrape 時に Gemini＋Google 検索で相手の最近の動きを出典付きで調べ、文面の冒頭に使う（1件1回の検索）
 daily_limit: 30        # 1日のフォーム入力上限
 interval_sec: 5        # 1件ごとの待機
 auto_submit: false     # true + --headless で完全自動送信（自己責任・営業お断りサイトに注意）

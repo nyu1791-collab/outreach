@@ -82,7 +82,24 @@ def _contact(url, links, labels):
     return ""
 
 
-def analyze(url: str, extract_hint: str = "") -> dict:
+RESEARCH_PROMPT = """Google 検索で「{name}」（{url}）について調べ、営業メッセージの冒頭で触れられる**最近の具体的な事実**を最大3つ挙げてください。
+（新店舗・新商品・新作・イベント・受賞・採用・SNSで話題になったこと等。直近1年以内を優先）
+確認できない・別の会社の情報しか無い場合は facts を空にする。推測は書かない。
+JSON のみ: {{"facts": ["事実1（いつ・何を）", ...]}}"""
+
+
+def web_research(name, url):
+    """Gemini + Google 検索で相手の最近の動きを出典付きで集める。-> (facts, sources)"""
+    try:
+        res, sources = llm.ask_sources(RESEARCH_PROMPT.format(name=name, url=url), json_mode=True, temperature=0, task="research")
+    except Exception as e:
+        print(f"  Web調査失敗: {e}")
+        return [], []
+    facts = [str(f) for f in (res.get("facts") if isinstance(res, dict) else []) or [] if str(f).strip()][:3]
+    return (facts, sources[:5]) if facts and sources else ([], [])
+
+
+def analyze(url: str, extract_hint: str = "", web: bool = False) -> dict:
     labels, has_form, raw = {}, False, ""
     if fc.client():
         try:
@@ -111,11 +128,14 @@ def analyze(url: str, extract_hint: str = "") -> dict:
     info = None
     try:
         info = llm.ask(EXTRACT_PROMPT.format(text=text[:8000]) + (f"\n追加の指示: {extract_hint}" if extract_hint else ""),
-                       json_mode=True, temperature=0)
+                       json_mode=True, temperature=0, task="extract")
     except Exception as e:
         print(f"  抽出LLM失敗: {e}")
     info = info or {"company": title, "summary": text[:200].replace("\n", " "), "hook": "", "pain": "", "recent": ""}
     info["no_sales"] = bool(info.get("no_sales")) or has_no_sales_notice(text)
+    facts, sources = web_research(info.get("company") or title or url, url) if web else ([], [])
+    if facts:
+        info["recent"] = " / ".join(facts)
     return {
         "title": info.get("company") or title,
         "contact_url": contact,
@@ -123,7 +143,8 @@ def analyze(url: str, extract_hint: str = "") -> dict:
         "socials": " ".join(socials[:6]),
         "hook": " / ".join(x for x in (info.get("hook"), info.get("recent"), info.get("pain")) if x),
         "no_sales": info["no_sales"],
-        "text": (f"【概要】{info.get('summary','')}\n【最近】{info.get('recent','')}\n【課題仮説】{info.get('pain','')}\n\n" + text)[:6000],
+        "text": (f"【概要】{info.get('summary','')}\n【最近】{info.get('recent','')}\n【課題仮説】{info.get('pain','')}\n"
+                 + ("【Web調査の出典】" + " ".join(s["uri"] for s in sources) + "\n" if sources else "") + "\n" + text)[:6000],
     }
 
 
