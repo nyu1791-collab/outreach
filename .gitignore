@@ -8,3 +8,5 @@ data/shots/
 dist/
 build/
 *.spec
+*.log
+.pytest_cache/

@@ -27,6 +27,8 @@ class FormResult(BaseModel):
     has_captcha: bool
     no_sales_notice: bool  # 「営業お断り」等の表記を見つけた
     note: str
+    submitted: bool = False
+    submission_evidence: str = ""
 
 
 def _secrets(cfg):
@@ -56,6 +58,8 @@ async def fill_form(url, cfg, msg, wait_human=True, headless=False):
 - 必須でない欄で該当値が無いものは空のまま
 - ページに「営業目的のお問い合わせはご遠慮ください」等の表記があれば入力せず no_sales_notice=true で終了
 - CAPTCHA があれば has_captcha=true として終了
+- submitted=true は最終送信後に完了画面を確認できた場合だけ。確認画面・入力エラーは false。
+- 送信が完了した場合は submission_evidence に完了画面の文言をそのまま記録。未確認なら空文字。
 - {submit_rule}"""
     from .scrape import FORM_HOSTS
     base = domain.removeprefix("www.")
@@ -74,7 +78,7 @@ async def fill_form(url, cfg, msg, wait_human=True, headless=False):
         if res.filled and wait_human and not headless:
             ans = await asyncio.to_thread(input, f"  [AI入力 {len(res.filled_fields)}項目] 確認→送信したら Enter / スキップは s : ")
             status = "skipped" if ans.strip().lower() == "s" else "sent"
-        elif res.filled and cfg.get("auto_submit") and not wait_human:
+        elif res.filled and res.submitted and res.submission_evidence and not res.has_captcha and cfg.get("auto_submit") and not wait_human:
             status = "sent"
         note = ("CAPTCHAあり " if res.has_captcha else "") + res.note
         return status, len(res.filled_fields), note[:200]

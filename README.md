@@ -3,6 +3,8 @@
 検索 → サイト解析 → 相手専用の営業文生成 → お問い合わせフォーム自動入力 → **人間が目視して送信**（半自動）までを1コマンドで回す。
 メールアドレスしか無い相手は Gmail の下書きに自動保存。
 
+[引き継ぎ・再開手順](docs/HANDOFF.md) に実装済みの範囲、状態の意味、未確認の外部連携をまとめています。`office-worker` の集客を担当しますが、受注から案件作成への自動連携は未実装です。
+
 ```
 discover(Firecrawl検索) → scrape(Firecrawl + Gemini抽出) → write(Gemini) → fill(高速入力 → 難しければ browser-use) → 人間が送信
    new                      scraped                         written          filled → sent / skipped
@@ -13,15 +15,15 @@ discover(Firecrawl検索) → scrape(Firecrawl + Gemini抽出) → write(Gemini)
 ## 取り込んだリポジトリ
 | 元リポジトリ | 取り込み方 | このツールでの役割 |
 |---|---|---|
-| [browser-use/browser-use](https://github.com/browser-use/browser-use)（MIT） | `vendor/browser-use`（git submodule, 0.13.14）を editable install | ① 自動入力しにくいフォームを AI が読んで入力（構造化結果・個人情報はプレースホルダで LLM に見せない・対象ドメイン外へ移動禁止）② `research`: YouTuber/SNS の連絡先・最新活動を調査（公式サンプル find_influencer_profiles を応用） |
-| [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl)（本体 AGPL / SDK MIT） | `vendor/firecrawl`（git submodule, v2.11.642）。本体は無改変で Docker 起動、SDK は editable install | JS描画サイトも綺麗な Markdown で取得・サイトマップから問い合わせページ発見（map）・検索（search）。ローカル起動ならキー不要・無制限 |
+| [browser-use/browser-use](https://github.com/browser-use/browser-use)（MIT） | 任意: `vendor/browser-use`（git submodule, 0.13.14）を editable install | ① 自動入力しにくいフォームを AI が読んで入力（入力欄の値はプレースホルダ化。署名を含む文面はAIへ渡る）② `research`: SNS等の連絡先・最新活動を調査 |
+| [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl)（本体 AGPL / SDK MIT） | 任意: `vendor/firecrawl`（git submodule, v2.11.642）。本体は無改変で Docker 起動、SDK は editable install | JS描画サイトの Markdown 取得・問い合わせページ発見・検索。ローカル運用にもPC資源と外部APIの費用・制限がある |
 | フォーム入力ツール一般の手法 | 自前実装 | ラベル/placeholder/name のキーワード照合で即入力（AI 代ゼロ）。2項目未満しか入らなければ browser-use へ自動切替 |
 
 ## 最短スタート（Windows）
 ```powershell
-git clone --recursive <このリポジトリ> ; cd outreach
-.\setup.ps1                       # submodule取得・venv・ライブラリ・Chromium を一括導入
-.\scripts\firecrawl.ps1 up        # （任意・要Docker Desktop）Firecrawl をローカル起動 → .env に FIRECRAWL_API_URL=http://localhost:3002
+git clone https://github.com/nyu1791-collab/outreach.git
+cd outreach
+.\setup.ps1                       # 基本機能・venv・Chromium（AIブラウザ/Firecrawlは任意）
 notepad .env                      # GEMINI_API_KEY を記入
 notepad config.yaml               # 自分の名前・提案内容を記入
 .\.venv\Scripts\Activate.ps1
@@ -30,6 +32,10 @@ python -m outreach discover "渋谷 美容室" -n 20
 python -m outreach run --limit 10        # 解析→文面→フォーム入力。ブラウザで確認して送信→Enter
 python -m outreach status
 ```
+
+AIブラウザは `./setup.ps1 -WithBrowser`、Firecrawl SDKは `./setup.ps1 -WithFirecrawl` で追加します。Linuxは `bash setup.sh` に必要な時だけ `--with-browser` / `--with-firecrawl` を付けます。どちらも基本のCSV管理や文面生成に必須ではありません。
+
+Firecrawlをローカル起動する場合は、SDKの追加後に `./scripts/firecrawl.ps1 up`（要Docker Desktop）を実行し、`.env` の `FIRECRAWL_API_URL=http://localhost:3002` を設定します。既存の `.env` にFirecrawl設定がある場合も、先に `-WithFirecrawl` でSDKを導入してください。
 
 ## コマンド
 | コマンド | 内容 |
@@ -54,6 +60,9 @@ python -m outreach status
 - 「営業代行 1件◯円」「自動営業システム構築 5〜15万円」としてココナラ/ランサーズで販売。`config.yaml` と `prompts/` を差し替えるだけで別クライアント用になる
 
 ## 注意
-- 「営業お断り」と書かれたフォームには送らない（`write` 前に `summary` を見て `status` を `skipped` に変えればよい）
+- 問い合わせページの「営業お断り」を入力前に検査します。禁止表記の検出を保証するものではないため、人間も確認します。
+- `filled` は入力済み、`sent` は送信完了確認済みです。確認画面への遷移だけでは自動で送信済みにしません。
+- Gmail下書き保存が拒否された場合は理由を残し、次の `drafts` 実行で再試行します。
+- 配信停止返信の自動取り込みは未実装です。不要と返答された相手は手動で `skipped` にして再連絡しないよう管理します。
 - メール送信は特定電子メール法の表示義務あり（署名と配信停止文は `config.yaml` で自動付与）
 - 既定の `daily_limit: 30` / `interval_sec: 5` を目安に

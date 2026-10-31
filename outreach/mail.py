@@ -13,4 +13,6 @@ def save_draft(to: str, subject: str, body: str):
     with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
         imap.login(user, pw)
         box = os.getenv("GMAIL_DRAFTS", "[Gmail]/Drafts")
-        imap.append(f'"{box}"', r"\Draft", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+        status, _ = imap.append(f'"{box}"', r"\Draft", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+        if status != "OK":
+            raise RuntimeError(f"Gmail の下書き保存に失敗しました（IMAP APPEND: {status}）。下書きフォルダ名を確認してください")

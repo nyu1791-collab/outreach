@@ -1,4 +1,5 @@
 # outreach
+- 再開時は `docs/HANDOFF.md` を読む。基本導入は submodule 不要、AIブラウザ / Firecrawl は `setup.ps1 -WithBrowser/-WithFirecrawl` で追加。検証は `python -m unittest discover -s tests -v`。
 - 実行: `python -m outreach <cmd>`。エントリは `outreach/__main__.py`
 - 工程は `status` 列で進む: new→scraped→written→filled→sent。工程追加は `step(from, to, fn, limit)` を1つ足すだけ
 - データ層は `store.Table`（CSV / Googleシート自動切替）。列を増やすなら `COLS` に追記

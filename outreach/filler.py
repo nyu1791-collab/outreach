@@ -6,6 +6,16 @@ import os
 import re
 from pathlib import Path
 
+from .scrape import NO_SALES_RE
+
+DELIVERY_RE = re.compile(
+    r"送信(?:が)?完了(?:しました|いたしました)|送信されました|送信完了(?=[\s。.!！]|$)"
+    r"|お問い合わせ(?:を)?(?:受け付けました|受付いたしました)"
+    r"|thank you for (?:your (?:message|inquiry)|contacting us)"
+    r"|(?:message|inquiry) (?:has been |was )?(?:successfully )?sent",
+    re.IGNORECASE,
+)
+
 FIELD_RULES = [  # (キー, 判定パターン)  上から順に照合
     ("email_confirm", r"(確認|再入力|confirm).*(mail|メール)|(mail|メール).*(確認|再入力|confirm)"),
     ("email", r"mail|メール"),
@@ -47,6 +57,11 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
         page = await browser.new_page(locale="ja-JP")
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         await page.wait_for_timeout(1500)
+        before_text = await page.inner_text("body")
+        if NO_SALES_RE.search(before_text):
+            await page.screenshot(path=str(SHOTS / f"{lead_id}.png"), full_page=True)
+            await browser.close()
+            return "no_sales", 0
         filled = 0
         for el in await page.query_selector_all("input, textarea, select"):
             try:
@@ -88,6 +103,10 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
             btn = await page.query_selector("button[type=submit], input[type=submit], button:has-text('送信'), button:has-text('確認')")
             if btn:
                 await btn.click(); await page.wait_for_timeout(3000)
-                result = "sent"
+                after_text = await page.inner_text("body")
+                # 「確認」への遷移や入力エラーは送信成功ではない。
+                if DELIVERY_RE.search(after_text) and not DELIVERY_RE.search(before_text):
+                    result = "sent"
+                await page.screenshot(path=str(shot), full_page=True)
         await browser.close()
         return result, filled

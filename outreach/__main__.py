@@ -48,7 +48,7 @@ def add_rows(new):
     have = {r["url"].rstrip("/") for r in rows}
     n = 0
     for x in new:
-        u = x["url"].strip()
+        u = (x.get("url") or "").strip()
         if not u or u.rstrip("/") in have:
             continue
         rows.append({"id": lid(u), "name": x.get("name") or u, "url": u, "status": "new", "updated_at": now()})
@@ -57,7 +57,7 @@ def add_rows(new):
     print(f"+{n}件 追加（合計 {len(rows)}）")
 
 
-def step(status_from, status_to, fn, limit):
+def step(status_from, status_to, fn, limit, on_error_status="error"):
     t = Table("leads", COLS)
     rows = t.load()
     todo = [r for r in rows if r["status"] == status_from][:limit]
@@ -67,7 +67,7 @@ def step(status_from, status_to, fn, limit):
             fn(r)
             r["status"] = r.get("_next", status_to)
         except Exception as e:
-            r["status"], r["note"] = "error", f"{status_from}: {e}"[:300]
+            r["status"], r["note"] = on_error_status, f"{status_from}: {e}"[:300]
             print(f"  ✗ {e}")
         r.pop("_next", None)
         r["updated_at"] = now()
@@ -113,13 +113,16 @@ def main():
     elif args.cmd == "add":
         add_rows([{"url": args.url, "name": args.name}])
     elif args.cmd == "import":
+        rows = None
         for enc in ("utf-8-sig", "cp932"):  # Excel保存の Shift_JIS も読める
             try:
-                with open(args.csv, encoding=enc) as f:
+                with open(args.csv, encoding=enc, newline="") as f:
                     rows = list(csv.DictReader(f))
                 break
             except UnicodeDecodeError:
                 continue
+        if rows is None:
+            ap.error("CSV は UTF-8 または CP932 で保存してください")
         # 列名ゆれ吸収（URL/url/ホームページ, 会社名/name 等）
         norm = lambda r: {"url": next((v for k, v in r.items() if k and k.strip().lower() in ("url", "ホームページ", "website", "サイト")), ""),
                           "name": next((v for k, v in r.items() if k and k.strip().lower() in ("name", "会社名", "企業名", "店舗名", "名前")), "")}
@@ -174,7 +177,8 @@ def main():
         def do_draft(r):
             mail.save_draft(r["email"].split(",")[0].strip(), r["subject"], r["message"])
             r["_next"] = "drafted"
-        step("mail_only", "drafted", do_draft, args.limit)
+            r["note"] = ""
+        step("mail_only", "drafted", do_draft, args.limit, on_error_status="mail_only")
     if args.cmd == "status":
         print(dict(Counter(r["status"] for r in Table("leads", COLS).load())))
 

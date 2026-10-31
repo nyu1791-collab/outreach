@@ -1,0 +1,2 @@
+# setup.ps1 -WithBrowser / setup.sh --with-browser で submodule を取得してから導入
+-e ./vendor/browser-use

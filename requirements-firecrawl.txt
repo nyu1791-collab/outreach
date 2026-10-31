@@ -1,0 +1,2 @@
+# setup.ps1 -WithFirecrawl / setup.sh --with-firecrawl で submodule を取得してから導入
+-e ./vendor/firecrawl/apps/python-sdk
