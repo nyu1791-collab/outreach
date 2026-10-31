@@ -9,6 +9,7 @@
 # 相手
 - 名前: {target_name}
 - URL: {target_url}
+- 冒頭で触れるべきポイント（事前リサーチ）: {hook}
 - サイト本文（抜粋）:
 {target_text}
 

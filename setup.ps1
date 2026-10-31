@@ -4,6 +4,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
   winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements
   Write-Host "Python を入れました。PowerShell を開き直して再実行してください"; exit
 }
+git submodule update --init --depth 1   # vendor/ に取り込んだ元リポジトリを取得
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -U pip
 .\.venv\Scripts\pip install -r requirements.txt

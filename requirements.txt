@@ -1,3 +1,7 @@
+# --- 取り込んだリポジトリ本体（git submodule: vendor/） ---
+-e ./vendor/browser-use                     # browser-use/browser-use (MIT)
+-e ./vendor/firecrawl/apps/python-sdk       # firecrawl/firecrawl 公式 Python SDK (MIT)
+# --- その他 ---
 google-genai>=1.0
 python-dotenv
 pyyaml
@@ -6,6 +10,3 @@ beautifulsoup4
 gspread>=6
 playwright
 ddgs
-# 任意（入れると強化）
-firecrawl-py
-browser-use

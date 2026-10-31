@@ -12,7 +12,7 @@ def write(lead: dict, cfg: dict) -> dict:
     prompt = tmpl.format(
         sender_name=s["name"], sender_company=s.get("company", ""), offer=offer["summary"],
         price=offer.get("price", ""), cta=offer.get("cta", ""), target_name=lead["name"],
-        target_url=lead["url"], target_text=lead.get("summary", "")[:5000], max_chars=cfg.get("max_chars", 500),
+        target_url=lead["url"], hook=lead.get("hook", ""), target_text=lead.get("summary", "")[:5000], max_chars=cfg.get("max_chars", 500),
     )
     res = llm.ask(prompt, json_mode=True)
     if res:

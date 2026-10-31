@@ -3,7 +3,8 @@
   add URL [--name 名前]          1件追加 / import leads.csv で一括
   scrape                          サイト解析（連絡先・本文）
   write                           AIで営業文を生成
-  fill [--agent] [--headless]     フォーム自動入力（既定は人間が最終送信）
+  research                        連絡先なし/SNSのみの相手を browser-use AI が調査
+  fill [--agent] [--headless]     フォーム自動入力（既定は人間が最終送信。難しいフォームは自動で AI に切替）
   drafts                          メールアドレスがある先は Gmail 下書きに保存
   run                             scrape→write→fill を一気に
   status                          件数サマリ"""
@@ -11,6 +12,7 @@ import argparse
 import asyncio
 import csv
 import hashlib
+import os
 import random
 import time
 from collections import Counter
@@ -25,7 +27,7 @@ load_dotenv()
 from . import scrape, writer  # noqa: E402
 from .store import Table  # noqa: E402
 
-COLS = ["id", "name", "url", "contact_url", "email", "socials", "summary", "subject", "message", "status", "note", "updated_at"]
+COLS = ["id", "name", "url", "contact_url", "email", "socials", "hook", "summary", "subject", "message", "status", "note", "updated_at"]
 
 
 def cfg():
@@ -76,9 +78,12 @@ def step(status_from, status_to, fn, limit):
 def do_scrape(r):
     a = scrape.analyze(r["url"])
     r["contact_url"], r["email"], r["socials"], r["summary"] = a["contact_url"], a["email"], a["socials"], a["text"]
-    if r["name"] == r["url"] and a["title"]:
+    r["hook"] = a["hook"]
+    if a["title"] and (r["name"] == r["url"] or len(r["name"]) > 40):
         r["name"] = a["title"][:60]
-    if not a["contact_url"] and not a["email"]:
+    if a["no_sales"]:
+        r["_next"], r["note"] = "no_sales", "営業お断り表記あり"
+    elif not a["contact_url"] and not a["email"]:
         r["_next"], r["note"] = "no_contact", "フォーム/メール見つからず"
     time.sleep(random.uniform(1, 3))
 
@@ -94,7 +99,7 @@ def main():
     d = sp.add_parser("discover"); d.add_argument("query"); d.add_argument("-n", type=int, default=20)
     a = sp.add_parser("add"); a.add_argument("url"); a.add_argument("--name", default="")
     im = sp.add_parser("import"); im.add_argument("csv")
-    for name in ("scrape", "write", "fill", "drafts", "run"):
+    for name in ("scrape", "research", "write", "fill", "drafts", "run"):
         p = sp.add_parser(name); p.add_argument("--limit", type=int, default=50)
         if name in ("fill", "run"):
             p.add_argument("--agent", action="store_true", help="browser-use AIエージェントで入力")
@@ -112,6 +117,20 @@ def main():
             add_rows(list(csv.DictReader(f)))
     if args.cmd in ("scrape", "run"):
         step("new", "scraped", do_scrape, args.limit)
+    if args.cmd == "research":
+        from . import agent
+
+        def do_research(r):
+            info = asyncio.run(agent.research(r))
+            if not info:
+                r["_next"] = "no_contact"; return
+            r["email"] = r["email"] or info.email
+            r["contact_url"] = r["contact_url"] or info.contact_url
+            r["socials"] = " ".join(dict.fromkeys(r["socials"].split() + [p.profile_url for p in info.profiles]))
+            r["hook"] = " / ".join(x for x in (r["hook"], info.recent_activity, info.audience) if x)
+            r["note"] = info.note[:200]
+            r["_next"] = "scraped" if (r["email"] or r["contact_url"]) else "no_contact"
+        step("no_contact", "scraped", do_research, args.limit)
     if args.cmd in ("write", "run"):
         step("scraped", "written", lambda r: do_write(r, c), args.limit)
     if args.cmd in ("fill", "run"):
@@ -121,11 +140,17 @@ def main():
             if not r["contact_url"]:
                 r["_next"] = "mail_only" if r["email"] else "no_contact"; return
             msg = {"subject": r["subject"], "body": r["message"]}
-            if args.agent:
-                res, n = asyncio.run(filler.fill_agent(r["contact_url"], c, msg))
-            else:
-                res, n = asyncio.run(filler.fill_heuristic(r["contact_url"], c, msg, r["id"], headless=args.headless))
-            r["_next"], r["note"] = res, f"入力{n}項目"
+            note = ""
+            res, n = ("retry_agent", 0) if args.agent else asyncio.run(
+                filler.fill_heuristic(r["contact_url"], c, msg, r["id"], headless=args.headless))
+            if res == "retry_agent":
+                if not os.getenv("GEMINI_API_KEY"):
+                    r["_next"], r["note"] = "error", "フォーム項目を特定できず（GEMINI_API_KEY を入れると AI が入力）"; return
+                from . import agent
+                print("  → browser-use AI エージェントで入力")
+                res, n, note = asyncio.run(agent.fill_form(r["contact_url"], c, msg, wait_human=not args.headless,
+                                                           headless=args.headless))
+            r["_next"], r["note"] = res, f"入力{n}項目 {note}".strip()
             time.sleep(c.get("interval_sec", 5))
         step("written", "filled", do_fill, min(args.limit, c.get("daily_limit", 30)))
     if args.cmd == "drafts":

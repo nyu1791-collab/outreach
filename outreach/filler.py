@@ -1,6 +1,6 @@
 """お問い合わせフォーム自動入力。
 - 標準: Playwright でラベル/placeholder/name をキーワード照合して入力 → スクショ → 人間が確認して送信（半自動）
-- --agent: browser-use の AI エージェントに任せる（複雑なフォーム・複数ステップ向け）"""
+- 入力できた項目が少ない/複雑なフォームは __main__ 側で agent.fill_form（browser-use）へ自動切替"""
 import asyncio
 import os
 import re
@@ -43,7 +43,7 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
     vals = _values(cfg, msg)
     SHOTS.mkdir(parents=True, exist_ok=True)
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        browser = await p.chromium.launch(headless=headless, executable_path=os.getenv("CHROME_PATH") or None)
         page = await browser.new_page(locale="ja-JP")
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         await page.wait_for_timeout(1500)
@@ -78,6 +78,9 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
         shot = SHOTS / f"{lead_id}.png"
         await page.screenshot(path=str(shot), full_page=True)
         result = "filled"
+        if filled < 2:  # ほぼ入らなかった → 呼び出し側で AI エージェントへ
+            await browser.close()
+            return "retry_agent", filled
         if wait_human and not headless:
             ans = await asyncio.to_thread(input, f"  [{filled}項目入力] ブラウザで確認→送信したら Enter / スキップは s : ")
             result = "skipped" if ans.strip().lower() == "s" else "sent"
@@ -88,14 +91,3 @@ async def fill_heuristic(url, cfg, msg, lead_id, headless=False, wait_human=True
                 result = "sent"
         await browser.close()
         return result, filled
-
-
-async def fill_agent(url, cfg, msg):
-    from browser_use import Agent, ChatGoogle
-    v = _values(cfg, msg)
-    task = (f"{url} を開き、お問い合わせフォームに以下を入力してください。送信ボタンは押さず、入力完了で終了。\n"
-            f"会社名:{v['company']} 氏名:{v['name']} フリガナ:{v['kana']} メール:{v['email']} 電話:{v['tel']}\n"
-            f"件名:{v['subject']}\n本文:\n{v['message']}")
-    agent = Agent(task=task, llm=ChatGoogle(model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash")))
-    await agent.run(max_steps=25)
-    return "filled", -1

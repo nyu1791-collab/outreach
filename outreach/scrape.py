@@ -1,81 +1,124 @@
-"""ページ取得 → LLMが読みやすいテキスト化 + 連絡先抽出。
-Firecrawl のキーがあれば Firecrawl（JS描画・綺麗なMarkdown）、無ければ requests+BeautifulSoup。"""
-import os
+"""サイト解析: Firecrawl（vendor/firecrawl）で取得 → Gemini で営業に使う情報を構造化。
+Firecrawl 未起動なら requests+BeautifulSoup、Gemini キー無しなら正規表現で最低限。"""
 import re
 from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
+from . import fc, llm
+
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36"}
-CONTACT_HINTS = ("contact", "inquiry", "toiawase", "otoiawase", "form", "お問い合わせ", "お問合せ", "問い合わせ", "ご相談", "相談")
+CONTACT_HINTS = ("contact", "inquiry", "toiawase", "otoiawase", "form", "お問い合わせ", "お問合せ", "問い合わせ", "ご相談")
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-SOCIAL = ("twitter.com", "x.com", "instagram.com", "youtube.com", "tiktok.com", "facebook.com", "line.me")
+SOCIAL = ("twitter.com", "x.com", "instagram.com", "youtube.com", "tiktok.com", "facebook.com", "line.me", "note.com")
+NO_SALES_RE = re.compile(r"営業(目的)?の?(ご連絡|お問い合わせ|メール)?(は|を)?(ご遠慮|お断り|禁止)|セールス.{0,6}(お断り|ご遠慮)")
+
+EXTRACT_PROMPT = """以下は企業/個人のWebサイト本文です。営業アプローチ用に情報を抽出し JSON で返してください。
+キー:
+- company: 正式な会社名・屋号・チャンネル名
+- summary: 何をしている相手か（80字）
+- recent: 最近の取り組み・ニュース・新サービス（あれば60字、無ければ空）
+- pain: 相手が抱えていそうな課題の推測（60字）
+- hook: 営業文の冒頭で触れると良い具体的な一点（40字）
+- no_sales: 「営業お断り」等の記載があれば true
+
+本文:
+{text}"""
 
 
-def fetch_html(url: str) -> str:
+def _fetch(url):
     r = requests.get(url, headers=UA, timeout=20)
     r.encoding = r.apparent_encoding or r.encoding
     return r.text
 
 
-def to_markdown(url: str) -> str:
-    key = os.getenv("FIRECRAWL_API_KEY")
-    if key:
-        try:
-            from firecrawl import Firecrawl
-            doc = Firecrawl(api_key=key).scrape(url, formats=["markdown"], only_main_content=True)
-            md = getattr(doc, "markdown", None) or (doc.get("markdown") if isinstance(doc, dict) else None)
-            if md:
-                return md
-        except Exception as e:  # Firecrawl 失敗時はローカル取得へ
-            print(f"  firecrawl失敗 → ローカル取得: {e}")
-    soup = BeautifulSoup(fetch_html(url), "html.parser")
+def _local(url):
+    html = _fetch(url)
+    soup = BeautifulSoup(html, "html.parser")
+    title = (soup.title.string or "").strip() if soup.title else ""
+    links = [urljoin(url, a["href"]) for a in soup.find_all("a", href=True)]
+    labels = {urljoin(url, a["href"]): a.get_text(" ", strip=True) for a in soup.find_all("a", href=True)}
+    has_form = bool(soup.find("form") and soup.find("textarea"))
     for t in soup(["script", "style", "noscript", "svg", "iframe"]):
         t.decompose()
-    text = soup.get_text("\n")
-    return re.sub(r"\n\s*\n+", "\n\n", text).strip()
+    text = re.sub(r"\n\s*\n+", "\n\n", soup.get_text("\n")).strip()
+    return text, links, title, labels, has_form, html
+
+
+def _contact(url, links, labels):
+    for l in links:
+        low = (l + " " + labels.get(l, "")).lower()
+        if l.startswith("mailto:"):
+            continue
+        if any(h in low for h in CONTACT_HINTS) and urlparse(l).netloc == urlparse(url).netloc:
+            return l
+    return ""
 
 
 def analyze(url: str) -> dict:
-    """トップページから 会社名/お問い合わせURL/メール/SNS/本文 を取る。"""
-    html = fetch_html(url)
-    soup = BeautifulSoup(html, "html.parser")
-    title = (soup.title.string or "").strip() if soup.title else ""
-    contact_url = ""
-    socials = set()
-    for a in soup.find_all("a", href=True):
-        href, label = a["href"], a.get_text(" ", strip=True).lower()
-        full = urljoin(url, href)
-        if not contact_url and any(h in (href.lower() + label) for h in CONTACT_HINTS) and not href.startswith("mailto:"):
-            contact_url = full
-        if any(s in urlparse(full).netloc for s in SOCIAL):
-            socials.add(full.split("?")[0])
-    emails = {e for e in EMAIL_RE.findall(html) if not e.lower().endswith((".png", ".jpg", ".gif", ".webp", ".svg"))}
-    for a in soup.select('a[href^="mailto:"]'):
-        emails.add(a["href"][7:].split("?")[0])
-    if not contact_url and soup.find("form") and soup.find("textarea"):
-        contact_url = url
+    labels, has_form, raw = {}, False, ""
+    if fc.client():
+        try:
+            text, links, title = fc.scrape(url, main_only=False)
+        except Exception as e:
+            print(f"  firecrawl失敗→ローカル: {e}")
+            text, links, title, labels, has_form, raw = _local(url)
+    else:
+        text, links, title, labels, has_form, raw = _local(url)
+
+    contact = _contact(url, links, labels)
+    if not contact and fc.client():  # サイトマップ全体から問い合わせページを探す（Firecrawl map）
+        try:
+            cand = fc.map_urls(url, search="contact お問い合わせ inquiry", limit=10)
+            contact = next((u for u in cand if any(h in u.lower() for h in CONTACT_HINTS)), "")
+        except Exception:
+            pass
+    if not contact and has_form:
+        contact = url
+
+    blob = text + " " + raw + " " + " ".join(links)
+    emails = sorted({e.rstrip(".") for e in EMAIL_RE.findall(blob)
+                     if not e.lower().endswith((".png", ".jpg", ".gif", ".webp", ".svg")) and "example" not in e})
+    socials = sorted({l.split("?")[0] for l in links if any(s in urlparse(l).netloc for s in SOCIAL)})
+
+    info = None
+    try:
+        info = llm.ask(EXTRACT_PROMPT.format(text=text[:8000]), json_mode=True, temperature=0)
+    except Exception as e:
+        print(f"  抽出LLM失敗: {e}")
+    info = info or {"company": title, "summary": text[:200].replace("\n", " "), "hook": "", "pain": "", "recent": ""}
+    info["no_sales"] = bool(info.get("no_sales")) or bool(NO_SALES_RE.search(text))
     return {
-        "title": title,
-        "contact_url": contact_url,
-        "email": ", ".join(sorted(emails)[:3]),
-        "socials": " ".join(sorted(socials)[:5]),
-        "text": to_markdown(url)[:6000],
+        "title": info.get("company") or title,
+        "contact_url": contact,
+        "email": ", ".join(emails[:3]),
+        "socials": " ".join(socials[:6]),
+        "hook": " / ".join(x for x in (info.get("hook"), info.get("recent"), info.get("pain")) if x),
+        "no_sales": info["no_sales"],
+        "text": (f"【概要】{info.get('summary','')}\n【最近】{info.get('recent','')}\n【課題仮説】{info.get('pain','')}\n\n" + text)[:6000],
     }
 
 
 def discover(query: str, n: int = 20) -> list[dict]:
-    """検索クエリから候補サイトを集める（DuckDuckGo、APIキー不要）。"""
-    from ddgs import DDGS
+    """検索で候補サイトを集める。Firecrawl search → 無ければ DuckDuckGo。"""
+    raw = []
+    if fc.client():
+        try:
+            raw = [{"href": r["url"], "title": r["title"]} for r in fc.search(query, limit=n * 2)]
+        except Exception as e:
+            print(f"  firecrawl search失敗→DuckDuckGo: {e}")
+    if not raw:
+        from ddgs import DDGS
+        raw = list(DDGS().text(query, region="jp-jp", max_results=n * 2))
+    skip = ("wikipedia.org", "amazon.", "rakuten.", "hotpepper", "tabelog", "indeed", "youtube.com", "x.com", "instagram.com")
     seen, out = set(), []
-    for r in DDGS().text(query, region="jp-jp", max_results=n * 2):
-        url = r.get("href", "")
-        dom = urlparse(url).netloc
-        if not dom or dom in seen:
+    for r in raw:
+        u = urlparse(r.get("href", ""))
+        if not u.netloc or u.netloc in seen or any(s in u.netloc for s in skip):
             continue
-        seen.add(dom)
-        out.append({"name": r.get("title", dom), "url": f"{urlparse(url).scheme}://{dom}/"})
+        seen.add(u.netloc)
+        out.append({"name": r.get("title") or u.netloc, "url": f"{u.scheme}://{u.netloc}/"})
         if len(out) >= n:
             break
     return out

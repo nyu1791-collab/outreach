@@ -1,0 +1,8 @@
+[submodule "vendor/browser-use"]
+	path = vendor/browser-use
+	url = https://github.com/browser-use/browser-use
+	shallow = true
+[submodule "vendor/firecrawl"]
+	path = vendor/firecrawl
+	url = https://github.com/firecrawl/firecrawl
+	shallow = true
