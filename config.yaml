@@ -20,6 +20,48 @@ offer:  # 現在の商品: office-worker/products/sales-csv-to-excel（README �
   subject: 店舗別の売上集計を自動化するご提案
   target_hint: 複数店舗・複数チャネルで販売している小売・飲食・美容・EC事業者（1店舗のみの相手には送らない）
 
+# キャンペーン（営業先の種類）ごとに提案・文面・連絡手段を切り替える。--campaign で指定、未指定は default_campaign
+# channel: form（問い合わせフォーム）/ mail（Gmail下書き）/ dm（SNSのDM下書きを書き出すだけ。送信は人）
+default_campaign: sales-csv
+campaigns:
+  sales-csv: {channel: form}   # 上の offer をそのまま使う
+  shop-diary:
+    channel: form
+    offer:
+      short: 写メ日記・出勤情報の一括投稿システム
+      summary: >-
+        キャストさんが店舗のLINEに写真と一言を送るだけで、その子の文体で写メ日記を作り、本人がOKしたら複数のポータルへ一括投稿するシステムの導入。
+        写真の明るさ補正・ロゴ透かし・位置情報の削除、媒体ごとのNGワード・文字数にも自動で合わせます。毎日の出勤表も自動で作ります
+      price: 初期5万円〜＋月額2万円〜（設定・保守込み）
+      cta: 1週間無料でお試しいただけます。ご興味があれば「詳しく」とご返信ください。
+      subject: 写メ日記の更新作業を自動化するご提案
+      target_hint: 写メ日記・SNSを毎日更新している店舗（更新が止まっている店舗にも有効）
+  creator-edit:
+    channel: dm
+    prompt: dm.md
+    max_chars: 280
+    offer:
+      short: モザイク処理と集客用ショート動画の制作代行
+      summary: 長尺動画のモザイク（動きに自動追従）と、X用の縦型サンプル動画3本をセットで納品します。モザイクの抜けは人が最終確認します
+      price: 1本3,000円〜／月額パックあり
+      cta: 初回1本は無料でお作りします。気になったら返信ください
+      target_hint: 定期的に動画を出しているクリエイター（編集を外注していなさそうな方）
+  doujin:
+    channel: dm
+    prompt: dm.md
+    max_chars: 350
+    extract_hint: 作品名・サークル名・販売数(DL数)・発売日・ジャンル・英語/中国語版の有無を summary に含める。英語版が既にある場合は no_sales を true にする
+    offer:
+      short: 作品の英語版・中国語版の制作と海外販売の代行
+      summary: 既に国内で売れている作品を英語・中国語に翻訳・写植し、海外向けストアで販売します。作家様の初期費用・作業はゼロ、海外売上を分け合う形です
+      price: 初期費用0円・海外売上の30〜40%（成果報酬）
+      cta: 表紙と1ページ目を英語にしたサンプルをお見せできます。ご興味があれば返信ください
+      target_hint: 国内で販売実績があり、まだ翻訳版を出していない作家様
+
+# サイトごとに付けるクッキー（年齢確認ページを飛ばす等）
+cookies:
+  dlsite.com: {adultchecked: "1"}
+
 max_chars: 450
 daily_limit: 30        # 1日のフォーム入力上限
 interval_sec: 5        # 1件ごとの待機

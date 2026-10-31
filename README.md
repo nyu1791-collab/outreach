@@ -37,6 +37,27 @@ AIブラウザは `./setup.ps1 -WithBrowser`、Firecrawl SDKは `./setup.ps1 -Wi
 
 Firecrawlをローカル起動する場合は、SDKの追加後に `./scripts/firecrawl.ps1 up`（要Docker Desktop）を実行し、`.env` の `FIRECRAWL_API_URL=http://localhost:3002` を設定します。既存の `.env` にFirecrawl設定がある場合も、先に `-WithFirecrawl` でSDKを導入してください。
 
+## キャンペーン（営業先の種類ごとに切替）
+`config.yaml` の `campaigns` に、営業先ごとの提案・文面・連絡手段を書く。`--campaign 名前` で対象を付ける/絞る。
+
+| キャンペーン | 相手 | 連絡手段 | 商品（office-worker） |
+|---|---|---|---|
+| `sales-csv` | 複数店舗の小売・飲食・EC | フォーム / メール | products/sales-csv-to-excel |
+| `shop-diary` | 写メ日記を更新している店舗 | フォーム / メール | products/shop-diary |
+| `creator-edit` | 動画を出しているクリエイター | **DM下書き**（送信は人） | products/creator-edit |
+| `doujin` | 翻訳版の無い同人作家 | **DM下書き**＋サンプル画像 | products/doujin-translation |
+
+```powershell
+python -m outreach import 作家リスト.csv --campaign doujin      # 列: name,url,sample（sample は提案用の訳サンプル画像）
+python -m outreach scrape --campaign doujin                       # 作品・販売数・翻訳版の有無を抽出（翻訳版ありは自動除外）
+python -m outreach write --campaign doujin                        # → dm_ready
+python -m outreach export-dm --campaign doujin                    # → data/dm_doujin.csv を見ながら手で送る
+python -m outreach mark <id> sent                                 # 送ったら記録（replied / ng なども自由に）
+python -m outreach status                                         # キャンペーン別の件数
+```
+- DM は**自動送信しない**（各SNSの規約・アカウント凍結対策）。X/MyFans などのプロフィールは `research` で browser-use に調べさせられる
+- DLsite の年齢確認は `cookies` 設定で通過
+
 ## コマンド
 | コマンド | 内容 |
 |---|---|

@@ -7,7 +7,10 @@
   fill [--agent] [--headless]     フォーム自動入力（既定は人間が最終送信。難しいフォームは自動で AI に切替）
   drafts                          メールアドレスがある先は Gmail 下書きに保存
   run                             scrape→write→fill を一気に
-  status                          件数サマリ"""
+  export-dm                       DM 下書き（dm_ready）を data/dm_<campaign>.csv に書き出す（送信は人）
+  mark ID 状態                    結果を記録（例: mark 1a2b3c4d sent / replied / ng）
+  status                          件数サマリ
+  ※ どのコマンドも --campaign 名（config.yaml の campaigns）で対象を絞る/付ける"""
 import argparse
 import asyncio
 import csv
@@ -25,9 +28,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from . import scrape, writer  # noqa: E402
+from . import store  # noqa: E402
 from .store import Table  # noqa: E402
 
-COLS = ["id", "name", "url", "contact_url", "email", "socials", "hook", "summary", "subject", "message", "status", "note", "updated_at", "form_attempted_at"]
+COLS = ["id", "name", "url", "contact_url", "email", "socials", "hook", "summary", "subject", "message", "status", "note", "updated_at", "form_attempted_at", "campaign", "sample"]
 
 
 def cfg():
@@ -42,7 +46,7 @@ def lid(url):
     return hashlib.md5(url.encode()).hexdigest()[:8]
 
 
-def add_rows(new):
+def add_rows(new, campaign=""):
     t = Table("leads", COLS)
     rows = t.load()
     have = {r["url"].rstrip("/") for r in rows}
@@ -51,10 +55,14 @@ def add_rows(new):
         u = (x.get("url") or "").strip()
         if not u or u.rstrip("/") in have:
             continue
-        rows.append({"id": lid(u), "name": x.get("name") or u, "url": u, "status": "new", "updated_at": now()})
+        rows.append({"id": lid(u), "name": x.get("name") or u, "url": u, "status": "new", "updated_at": now(),
+                     "campaign": campaign, "sample": x.get("sample", "")})
         have.add(u.rstrip("/")); n += 1
     t.save(rows)
     print(f"+{n}件 追加（合計 {len(rows)}）")
+
+
+CAMPAIGN = None  # --campaign 指定時はそのキャンペーンの行だけ処理
 
 
 def step(status_from, status_to, fn, limit, on_error_status="error", in_progress_status=None, attempt_field=None):
@@ -62,7 +70,7 @@ def step(status_from, status_to, fn, limit, on_error_status="error", in_progress
         raise ValueError("limitは0以上で指定してください")
     t = Table("leads", COLS)
     rows = t.load()
-    todo = [r for r in rows if r["status"] == status_from][:limit]
+    todo = [r for r in rows if r["status"] == status_from and (CAMPAIGN is None or r.get("campaign", "") == CAMPAIGN)][:limit]
     for i, r in enumerate(todo, 1):
         print(f"[{i}/{len(todo)}] {r['name'][:30]}  {r['url']}")
         start_status = in_progress_status(r) if callable(in_progress_status) else in_progress_status
@@ -83,22 +91,34 @@ def step(status_from, status_to, fn, limit, on_error_status="error", in_progress
     return len(todo)
 
 
+CFG = {}
+
+
+def cfg_for(r):
+    return writer.campaign(CFG, r.get("campaign") or None)
+
+
 def do_scrape(r):
-    a = scrape.analyze(r["url"])
+    a = scrape.analyze(r["url"], cfg_for(r).get("extract_hint", ""))
     r["contact_url"], r["email"], r["socials"], r["summary"] = a["contact_url"], a["email"], a["socials"], a["text"]
     r["hook"] = a["hook"]
     if a["title"] and (r["name"] == r["url"] or len(r["name"]) > 40):
         r["name"] = a["title"][:60]
     if a["no_sales"]:
         r["_next"], r["note"] = "no_sales", "営業お断り表記あり"
+    elif cfg_for(r).get("channel") == "dm":
+        pass  # DM は SNS から送るので問い合わせ先が無くてよい
     elif not a["contact_url"] and not a["email"]:
         r["_next"], r["note"] = "no_contact", "フォーム/メール見つからず"
     time.sleep(random.uniform(1, 3))
 
 
 def do_write(r, c):
-    m = writer.write(r, c)
+    cc = cfg_for(r)
+    m = writer.write(r, cc)
     r["subject"], r["message"] = m["subject"], m["body"]
+    if cc.get("channel") == "dm":
+        r["_next"] = "dm_ready"
 
 
 def _site(host):
@@ -132,23 +152,34 @@ def main():
     ap = argparse.ArgumentParser(prog="outreach", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     d = sp.add_parser("discover"); d.add_argument("query"); d.add_argument("-n", type=nonnegative_int, default=20)
-    a = sp.add_parser("add"); a.add_argument("url"); a.add_argument("--name", default="")
+    a = sp.add_parser("add"); a.add_argument("url"); a.add_argument("--name", default=""); a.add_argument("--sample", default="")
     im = sp.add_parser("import"); im.add_argument("csv")
+    sp.add_parser("export-dm")
+    mk = sp.add_parser("mark"); mk.add_argument("id"); mk.add_argument("state")
     for name in ("scrape", "research", "write", "fill", "drafts", "run"):
         p = sp.add_parser(name); p.add_argument("--limit", type=nonnegative_int, default=50)
         if name in ("fill", "run"):
             p.add_argument("--agent", action="store_true", help="browser-use AIエージェントで入力")
             p.add_argument("--headless", action="store_true", help="画面なし（スクショのみ・送信しない）")
     sp.add_parser("status")
+    for sub in sp.choices.values():
+        sub.add_argument("--campaign", default=None, help="config.yaml の campaigns の名前")
     args = ap.parse_args()
     if getattr(args, "limit", None) == 0 or (args.cmd == "discover" and args.n == 0):
         return
+    global CAMPAIGN
     c = cfg()
+    CFG.clear(); CFG.update(c)
+    scrape.COOKIES.update(c.get("cookies") or {})
+    if args.campaign and args.campaign not in (c.get("campaigns") or {}):
+        ap.error(f"campaigns に {args.campaign} がありません: {', '.join(c.get('campaigns') or {})}")
+    CAMPAIGN = args.campaign
+    new_campaign = args.campaign or c.get("default_campaign", "")
 
     if args.cmd == "discover":
-        add_rows(scrape.discover(args.query, args.n))
+        add_rows(scrape.discover(args.query, args.n), new_campaign)
     elif args.cmd == "add":
-        add_rows([{"url": args.url, "name": args.name}])
+        add_rows([{"url": args.url, "name": args.name, "sample": args.sample}], new_campaign)
     elif args.cmd == "import":
         rows = None
         for enc in ("utf-8-sig", "cp932"):  # Excel保存の Shift_JIS も読める
@@ -163,7 +194,7 @@ def main():
         # 列名ゆれ吸収（URL/url/ホームページ, 会社名/name 等）
         norm = lambda r: {"url": next((v for k, v in r.items() if k and k.strip().lower() in ("url", "ホームページ", "website", "サイト")), ""),
                           "name": next((v for k, v in r.items() if k and k.strip().lower() in ("name", "会社名", "企業名", "店舗名", "名前")), "")}
-        add_rows([norm(r) for r in rows])
+        add_rows([dict(norm(r), sample=r.get("sample", "")) for r in rows], new_campaign)
     if args.cmd in ("scrape", "run"):
         step("new", "scraped", do_scrape, args.limit)
     if args.cmd == "research":
@@ -186,6 +217,7 @@ def main():
         from . import filler
 
         def do_fill(r):
+            c = cfg_for(r)
             if not r["contact_url"]:
                 r["_next"] = "mail_only" if r["email"] else "no_contact"; return
             msg = {"subject": r["subject"], "body": r["message"]}
@@ -227,8 +259,29 @@ def main():
             r["_next"] = "drafted"
             r["note"] = ""
         step("mail_only", "drafted", do_draft, args.limit, on_error_status="mail_only", in_progress_status="drafting")
+    if args.cmd == "export-dm":
+        rows = [r for r in Table("leads", COLS).load() if r["status"] == "dm_ready" and (CAMPAIGN is None or r["campaign"] == CAMPAIGN)]
+        out = store.DATA / f"dm_{CAMPAIGN or 'all'}.csv"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["id", "名前", "URL", "SNS", "添付サンプル", "メッセージ"])
+            for r in rows:
+                w.writerow([r["id"], r["name"], r["url"], r["socials"], r["sample"], r["message"]])
+        print(f"{len(rows)}件 → {out}\n送ったら: python -m outreach mark <id> sent")
+    if args.cmd == "mark":
+        t = Table("leads", COLS)
+        rows = t.load()
+        hit = [r for r in rows if r["id"] == args.id]
+        if not hit:
+            ap.error(f"id {args.id} がありません")
+        hit[0]["status"], hit[0]["updated_at"] = args.state, now()
+        t.save(rows)
+        print(f"{args.id} → {args.state}")
     if args.cmd == "status":
-        print(dict(Counter(r["status"] for r in Table("leads", COLS).load())))
+        rows = Table("leads", COLS).load()
+        for camp in sorted({r.get("campaign", "") for r in rows}):
+            print(f"[{camp or '-'}]", dict(Counter(r["status"] for r in rows if r.get("campaign", "") == camp)))
 
 
 if __name__ == "__main__":

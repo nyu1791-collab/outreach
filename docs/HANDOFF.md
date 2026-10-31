@@ -72,3 +72,9 @@ Gemini、実browser-use SDK、Firecrawl、Sheets、Gmail本接続、実サイト
 - 姓/名・セイ/メイの分割欄に分けて入力（同じ表の行に並ぶ配置も直前の見出しで判定）。都道府県は送り手住所から選ぶ。当てはまらない選択肢は選ばない（以前は末尾を選んでいた）
 - Gmail 下書きはサイトと同じドメインのアドレスにだけ作る。別ドメインだけの相手は `mail_check`（制作会社のクレジット等の誤送信防止）。確認後に `email` 列を直して `status` を `mail_only` に戻す
 - AI の応答に本文が無い/短い場合はテンプレ文面にする（署名だけのメッセージを防ぐ）
+
+## 2026-10-31 事業1・2・6 の営業を追加
+- `config.yaml` に `campaigns`（sales-csv / shop-diary / creator-edit / doujin）。`--campaign` で付与・絞り込み。leads に `campaign` `sample` 列
+- channel=dm のキャンペーンは `write` 後に `dm_ready` → `export-dm` で CSV に書き出し、人が送って `mark <id> sent`。自動送信はしない
+- `extract_hint`（キャンペーン別の抽出指示）と `cookies`（DLsite の年齢確認等）
+- LLM は OpenRouter も可（`LLM_PROVIDER=openrouter`）

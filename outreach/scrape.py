@@ -40,8 +40,16 @@ EXTRACT_PROMPT = """以下は企業/個人のWebサイト本文です。営業�
 {text}"""
 
 
+COOKIES = {}  # {"dlsite.com": {"adultchecked": "1"}}  config.yaml の cookies から設定
+
+
+def _cookies(url):
+    host = urlparse(url).netloc
+    return {k: v for dom, kv in COOKIES.items() if host == dom or host.endswith("." + dom) for k, v in kv.items()}
+
+
 def _fetch(url):
-    r = requests.get(url, headers=UA, timeout=20)
+    r = requests.get(url, headers=UA, timeout=20, cookies=_cookies(url))
     r.encoding = r.apparent_encoding or r.encoding
     return r.text
 
@@ -74,7 +82,7 @@ def _contact(url, links, labels):
     return ""
 
 
-def analyze(url: str) -> dict:
+def analyze(url: str, extract_hint: str = "") -> dict:
     labels, has_form, raw = {}, False, ""
     if fc.client():
         try:
@@ -102,7 +110,8 @@ def analyze(url: str) -> dict:
 
     info = None
     try:
-        info = llm.ask(EXTRACT_PROMPT.format(text=text[:8000]), json_mode=True, temperature=0)
+        info = llm.ask(EXTRACT_PROMPT.format(text=text[:8000]) + (f"\n追加の指示: {extract_hint}" if extract_hint else ""),
+                       json_mode=True, temperature=0)
     except Exception as e:
         print(f"  抽出LLM失敗: {e}")
     info = info or {"company": title, "summary": text[:200].replace("\n", " "), "hook": "", "pain": "", "recent": ""}
