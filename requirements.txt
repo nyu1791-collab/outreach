@@ -1,0 +1,11 @@
+google-genai>=1.0
+python-dotenv
+pyyaml
+requests
+beautifulsoup4
+gspread>=6
+playwright
+ddgs
+# 任意（入れると強化）
+firecrawl-py
+browser-use

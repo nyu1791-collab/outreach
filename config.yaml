@@ -1,0 +1,23 @@
+# 送り手情報（フォーム入力・署名に使う）
+sender:
+  name: 山田 太郎
+  kana: ヤマダ タロウ
+  company: 山田オートメーション
+  email: you@example.com
+  tel: 090-0000-0000
+  zip: ""
+  address: ""
+  url: https://example.com
+
+# 提案内容
+offer:
+  summary: 事務作業（Excel/PDF/スプレッドシート）の自動化ツール制作
+  price: 3万円〜・最短3日
+  cta: ご興味があれば「詳しく」とだけご返信ください。15分のオンライン相談も可能です。
+  subject: 業務自動化のご提案
+
+max_chars: 450
+daily_limit: 30        # 1日のフォーム入力上限
+interval_sec: 5        # 1件ごとの待機
+auto_submit: false     # true + --headless で完全自動送信（自己責任・営業お断りサイトに注意）
+optout: 今後のご案内が不要でしたら、お手数ですが「不要」とご返信ください。以後ご連絡いたしません。

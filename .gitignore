@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+service_account.json
+data/*.csv
+!data/seed_leads.csv
+data/shots/
+dist/
+build/
+*.spec
